@@ -22,3 +22,4 @@ struct btp_vcs_set_vol_cmd {
 #define BTP_VCS_VOL_DOWN			0x04
 #define BTP_VCS_MUTE				0x05
 #define BTP_VCS_UNMUTE				0x06
+#define BTP_VCS_REGISTER			0x07

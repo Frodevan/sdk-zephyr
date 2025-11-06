@@ -67,6 +67,8 @@ struct service_handles {
 struct service_handles chrc_handles;
 
 /* Volume Control Service */
+static int vcs_registered_flag;
+
 static uint8_t vcs_supported_commands(const void *cmd, uint16_t cmd_len,
 				      void *rsp, uint16_t *rsp_len)
 {
@@ -85,8 +87,13 @@ static uint8_t set_volume(const void *cmd, uint16_t cmd_len,
 
 	LOG_DBG("Set volume 0x%02x", cp->volume);
 
-	if (bt_vcp_vol_rend_set_vol(cp->volume) != 0) {
-		return BTP_STATUS_FAILED;
+	if(vcs_registered_flag){
+		if (bt_vcp_vol_rend_set_vol(cp->volume) != 0) {
+			return BTP_STATUS_FAILED;
+		}
+	}
+	else {
+		vcp_register_param.volume = cp->volume;
 	}
 
 	return BTP_STATUS_SUCCESS;
@@ -140,6 +147,32 @@ static uint8_t unmute(const void *cmd, uint16_t cmd_len,
 	return BTP_STATUS_SUCCESS;
 }
 
+static uint8_t register_vcs(const void *cmd, uint16_t cmd_len,
+			  void *rsp, uint16_t *rsp_len)
+{
+	int err;
+
+	LOG_DBG("Registering VCS");
+
+	if(!vcs_registered_flag){
+		err = bt_vcp_vol_rend_register(&vcp_register_param);
+		if (err) {
+			return BTP_STATUS_FAILED;
+		}
+
+		err = bt_vcp_vol_rend_included_get(&included);
+		if (err) {
+			return BTP_STATUS_FAILED;
+		}
+
+		aics_server_instance.aics_cnt = included.aics_cnt;
+		aics_server_instance.aics = included.aics;
+		vcs_registered_flag = true;
+	}
+
+	return BTP_STATUS_SUCCESS;
+}
+
 static void vcs_state_cb(struct bt_conn *conn, int err, uint8_t volume, uint8_t mute)
 {
 	LOG_DBG("VCP state cb err (%d)", err);
@@ -187,6 +220,12 @@ static const struct btp_handler vcs_handlers[] = {
 		.expect_len = 0,
 		.func = unmute,
 	},
+	{
+		.opcode = BTP_VCS_REGISTER,
+		.expect_len = 0,
+		.func = register_vcs,
+	},
+
 };
 
 /* Volume Offset Control Service */
@@ -503,22 +542,9 @@ static void set_register_params(uint8_t gain_mode)
 
 uint8_t tester_init_vcs(void)
 {
-	int err;
-
 	set_register_params(BT_AICS_MODE_MANUAL);
 
-	err = bt_vcp_vol_rend_register(&vcp_register_param);
-	if (err) {
-		return BTP_STATUS_FAILED;
-	}
-
-	err = bt_vcp_vol_rend_included_get(&included);
-	if (err) {
-		return BTP_STATUS_FAILED;
-	}
-
-	aics_server_instance.aics_cnt = included.aics_cnt;
-	aics_server_instance.aics = included.aics;
+	vcs_registered_flag = false;
 
 	tester_register_command_handlers(BTP_SERVICE_ID_VCS, vcs_handlers,
 					 ARRAY_SIZE(vcs_handlers));
